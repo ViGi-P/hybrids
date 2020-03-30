@@ -27,6 +27,17 @@ export function getEntry(target, key) {
   return entry;
 }
 
+export function getEntries(target) {
+  const result = [];
+  const targetMap = entries.get(target);
+  if (targetMap) {
+    targetMap.forEach(entry => {
+      result.push(entry);
+    });
+  }
+  return result;
+}
+
 function calculateChecksum(entry) {
   let checksum = entry.state;
   if (entry.deps) {
@@ -60,7 +71,7 @@ function restoreDeepDeps(entry, deps) {
 }
 
 const contextStack = new Set();
-export function get(target, key, getter) {
+export function get(target, key, getter, validate) {
   const entry = getEntry(target, key);
 
   if (contextStack.size && contextStack.has(entry)) {
@@ -77,7 +88,11 @@ export function get(target, key, getter) {
     }
   });
 
-  if (entry.checksum && entry.checksum === calculateChecksum(entry)) {
+  if (
+    ((validate && validate(entry.value)) || !validate) &&
+    entry.checksum &&
+    entry.checksum === calculateChecksum(entry)
+  ) {
     return entry.value;
   }
 
@@ -143,6 +158,17 @@ export function set(target, key, setter, value, force) {
   }
 }
 
+function invalidateEntry(entry, clearValue) {
+  entry.checksum = 0;
+  entry.state += 1;
+
+  dispatchDeep(entry);
+
+  if (clearValue) {
+    entry.value = undefined;
+  }
+}
+
 export function invalidate(target, key, clearValue) {
   if (contextStack.size) {
     throw Error(
@@ -151,14 +177,21 @@ export function invalidate(target, key, clearValue) {
   }
 
   const entry = getEntry(target, key);
+  invalidateEntry(entry, clearValue);
+}
 
-  entry.checksum = 0;
-  entry.state += 1;
+export function invalidateAll(target, clearValue) {
+  if (contextStack.size) {
+    throw Error(
+      "Invalidating all properties in chain of get calls is forbidden",
+    );
+  }
 
-  dispatchDeep(entry);
-
-  if (clearValue) {
-    entry.value = undefined;
+  const targetMap = entries.get(target);
+  if (targetMap) {
+    targetMap.forEach(entry => {
+      invalidateEntry(entry, clearValue);
+    });
   }
 }
 
